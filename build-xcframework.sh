@@ -8,7 +8,7 @@ TVOS_MIN_OS_VERSION=16.4
 
 BUILD_SHARED_LIBS=OFF
 LLAMA_BUILD_EXAMPLES=OFF
-LLAMA_BUILD_TOOLS=OFF
+LLAMA_BUILD_TOOLS=ON
 LLAMA_BUILD_TESTS=OFF
 LLAMA_BUILD_SERVER=OFF
 GGML_METAL=ON
@@ -33,6 +33,7 @@ COMMON_CMAKE_ARGS=(
     -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}
     -DLLAMA_BUILD_EXAMPLES=${LLAMA_BUILD_EXAMPLES}
     -DLLAMA_BUILD_TOOLS=${LLAMA_BUILD_TOOLS}
+    -DLLAMA_TOOLS_INSTALL=OFF
     -DLLAMA_BUILD_TESTS=${LLAMA_BUILD_TESTS}
     -DLLAMA_BUILD_SERVER=${LLAMA_BUILD_SERVER}
     -DGGML_METAL_EMBED_LIBRARY=${GGML_METAL_EMBED_LIBRARY}
@@ -122,6 +123,8 @@ setup_framework_structure() {
     cp ggml/include/ggml-cpu.h     ${header_path}
     cp ggml/include/ggml-blas.h    ${header_path}
     cp ggml/include/gguf.h         ${header_path}
+    cp tools/mtmd/mtmd.h           ${header_path}
+    cp tools/mtmd/mtmd-helper.h    ${header_path}
 
     # Create module map (common for all platforms)
     cat > ${module_path}module.modulemap << EOF
@@ -134,6 +137,8 @@ framework module llama {
     header "ggml-cpu.h"
     header "ggml-blas.h"
     header "gguf.h"
+    header "mtmd.h"
+    header "mtmd-helper.h"
 
     link "c++"
     link framework "Accelerate"
@@ -250,6 +255,7 @@ combine_static_libraries() {
         "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-cpu.a"
         "${base_dir}/${build_dir}/ggml/src/ggml-metal/${release_dir}/libggml-metal.a"
         "${base_dir}/${build_dir}/ggml/src/ggml-blas/${release_dir}/libggml-blas.a"
+        "${base_dir}/${build_dir}/tools/mtmd/${release_dir}/libmtmd.a"
     )
 
     # Create temporary directory for processing
@@ -325,7 +331,7 @@ combine_static_libraries() {
         $arch_flags \
         $min_version_flag \
         -Wl,-force_load,"${temp_dir}/combined.a" \
-        -framework Foundation -framework Metal -framework Accelerate \
+        -framework Foundation -framework Metal -framework Accelerate -framework CoreML \
         -install_name "$install_name" \
         -o "${base_dir}/${output_lib}"
 
@@ -440,6 +446,28 @@ cmake -B build-macos -G Xcode \
     -DLLAMA_OPENSSL=OFF \
     -S .
 cmake --build build-macos --config Release -- -quiet
+
+echo "Setting up iOS/macOS framework structures..."
+setup_framework_structure "build-ios-sim" ${IOS_MIN_OS_VERSION} "ios"
+setup_framework_structure "build-ios-device" ${IOS_MIN_OS_VERSION} "ios"
+setup_framework_structure "build-macos" ${MACOS_MIN_OS_VERSION} "macos"
+
+echo "Creating iOS/macOS dynamic libraries from static libraries..."
+combine_static_libraries "build-ios-sim" "Release-iphonesimulator" "ios" "true"
+combine_static_libraries "build-ios-device" "Release-iphoneos" "ios" "false"
+combine_static_libraries "build-macos" "Release" "macos" "false"
+
+echo "Creating iOS/macOS XCFramework..."
+xcrun xcodebuild -create-xcframework \
+    -framework $(pwd)/build-ios-sim/framework/llama.framework \
+    -debug-symbols $(pwd)/build-ios-sim/dSYMs/llama.dSYM \
+    -framework $(pwd)/build-ios-device/framework/llama.framework \
+    -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
+    -framework $(pwd)/build-macos/framework/llama.framework \
+    -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
+    -output $(pwd)/build-apple/llama.xcframework
+
+exit 0
 
 echo "Building for visionOS..."
 cmake -B build-visionos -G Xcode \
