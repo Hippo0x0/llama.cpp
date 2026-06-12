@@ -250,6 +250,9 @@ combine_static_libraries() {
 
     local libs=(
         "${base_dir}/${build_dir}/src/${release_dir}/libllama.a"
+        "${base_dir}/${build_dir}/common/${release_dir}/libllama-common.a"
+        "${base_dir}/${build_dir}/common/${release_dir}/libllama-common-base.a"
+        "${base_dir}/${build_dir}/vendor/cpp-httplib/${release_dir}/libcpp-httplib.a"
         "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml.a"
         "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-base.a"
         "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-cpu.a"

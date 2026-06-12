@@ -2,6 +2,7 @@
 
 #include "llama-impl.h"
 
+#include "chat.h"
 #include "llama-chat.h"
 #include "llama-context.h"
 #include "llama-mmap.h"
@@ -495,6 +496,50 @@ int32_t llama_chat_apply_template(
     return res;
 }
 
+int32_t llama_chat_apply_template_jinja(
+              const struct llama_model * model,
+         const struct llama_chat_message * chat,
+                                  size_t   n_msg,
+                                    bool   add_ass,
+                                  char *   buf,
+                                 int32_t   length) {
+    if (model == nullptr) {
+        return -1;
+    }
+
+    try {
+        auto tmpls = common_chat_templates_init(model, "");
+
+        common_chat_templates_inputs inputs;
+        inputs.add_generation_prompt = add_ass;
+        inputs.use_jinja = true;
+
+        inputs.messages.reserve(n_msg);
+        for (size_t i = 0; i < n_msg; i++) {
+            common_chat_msg msg;
+            msg.role = chat[i].role == nullptr ? "" : chat[i].role;
+            msg.content = chat[i].content == nullptr ? "" : chat[i].content;
+            inputs.messages.push_back(std::move(msg));
+        }
+
+        const common_chat_params params = common_chat_templates_apply(tmpls.get(), inputs);
+        const auto & formatted_chat = params.prompt;
+        const auto required = static_cast<int32_t>(formatted_chat.size());
+
+        if (buf != nullptr && length > 0) {
+            const size_t n_copy = std::min(static_cast<size_t>(length - 1), formatted_chat.size());
+            std::memcpy(buf, formatted_chat.data(), n_copy);
+            buf[n_copy] = '\0';
+        }
+
+        return required;
+    } catch (const std::exception &) {
+        return -1;
+    } catch (...) {
+        return -1;
+    }
+}
+
 //
 // model split
 //
@@ -575,4 +620,3 @@ const char * llama_print_system_info(void) {
 
     return s.c_str();
 }
-
