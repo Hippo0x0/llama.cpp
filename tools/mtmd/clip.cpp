@@ -2604,6 +2604,9 @@ struct clip_model_loader {
             // alloc memory and offload data
             ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(ctx_clip.backend);
             ctx_clip.buf.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx_clip.ctx_data.get(), buft));
+            if (!ctx_clip.buf) {
+                throw std::runtime_error("failed to allocate multimodal projector weight buffers");
+            }
             ggml_backend_buffer_set_usage(ctx_clip.buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             for (auto & t : tensors_to_load) {
                 ggml_tensor * cur = ggml_get_tensor(ctx_clip.ctx_data.get(), t->name);
@@ -2904,6 +2907,10 @@ struct clip_init_result clip_init(const char * fname, struct clip_context_params
             // TODO: we don't support audio for Gemma 3N, but GGUF contains audio tensors
             // we can remove this check when we implement audio support for Gemma 3N
             skip_audio = ctx_vision->model.proj_type == PROJECTOR_TYPE_GEMMA3NV;
+            // Copytain currently exposes image input only. Combined projectors
+            // such as Gemma 4 also contain an audio encoder; loading that unused
+            // encoder costs hundreds of MB and can exceed the iOS memory budget.
+            skip_audio = true;
         }
 
         if (loader.has_audio && !skip_audio) {

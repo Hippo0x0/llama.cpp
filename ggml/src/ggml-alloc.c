@@ -10,6 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MAX_FREE_BLOCKS 256
 
@@ -1170,6 +1174,16 @@ static ggml_backend_buffer_t ggml_backend_alloc_ctx_tensors_from_buft_impl(
 
     size_t alignment = ggml_backend_buft_get_alignment(buft);
     size_t max_size = ggml_backend_buft_get_max_size(buft);
+
+#if defined(__APPLE__) && defined(TARGET_OS_IOS) && TARGET_OS_IOS
+    // iOS can reject a single large contiguous weight allocation even when
+    // aggregate memory is available. Keep model/projector weight buffers
+    // comfortably below the per-allocation limit and return a multi-buffer.
+    const size_t ios_max_buffer_size = 128ull * 1024ull * 1024ull;
+    if (max_size > ios_max_buffer_size) {
+        max_size = ios_max_buffer_size;
+    }
+#endif
 
     ggml_backend_buffer_t * buffers = NULL;
     size_t n_buffers = 0;

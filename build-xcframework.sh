@@ -17,16 +17,16 @@ GGML_BLAS_DEFAULT=ON
 GGML_METAL_USE_BF16=ON
 GGML_OPENMP=OFF
 
-COMMON_C_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32 -Wno-unused-command-line-argument -g"
-COMMON_CXX_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32 -Wno-unused-command-line-argument -g"
+COMMON_C_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32 -Wno-unused-command-line-argument"
+COMMON_CXX_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32 -Wno-unused-command-line-argument"
 
 # Common options for all builds
 COMMON_CMAKE_ARGS=(
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
-    -DCMAKE_XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT="dwarf-with-dsym"
-    -DCMAKE_XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS=YES
+    -DCMAKE_XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT="dwarf"
+    -DCMAKE_XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS=NO
     -DCMAKE_XCODE_ATTRIBUTE_COPY_PHASE_STRIP=NO
     -DCMAKE_XCODE_ATTRIBUTE_STRIP_INSTALLED_PRODUCT=NO
     -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=ggml
@@ -370,6 +370,12 @@ combine_static_libraries() {
         fi
     fi
 
+    echo "Stripping framework binary without generating dSYM..."
+    xcrun strip -S "${base_dir}/${output_lib}" -o "${temp_dir}/stripped_lib"
+    mv "${temp_dir}/stripped_lib" "${base_dir}/${output_lib}"
+    rm -rf "${temp_dir}"
+    return
+
     echo "Creating properly formatted dSYM..."
     # Create a separate directory for dSYMs for all platforms
     mkdir -p "${base_dir}/${build_dir}/dSYMs"
@@ -423,7 +429,7 @@ cmake -B build-ios-sim -G Xcode \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
     -DLLAMA_OPENSSL=OFF \
     -S .
-cmake --build build-ios-sim --config Release -- -quiet
+cmake --build build-ios-sim --config Release --target llama llama-common llama-common-base cpp-httplib ggml ggml-base ggml-cpu ggml-metal ggml-blas mtmd -- -quiet
 
 echo "Building for iOS devices..."
 cmake -B build-ios-device -G Xcode \
@@ -437,37 +443,20 @@ cmake -B build-ios-device -G Xcode \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
     -DLLAMA_OPENSSL=OFF \
     -S .
-cmake --build build-ios-device --config Release -- -quiet
+cmake --build build-ios-device --config Release --target llama llama-common llama-common-base cpp-httplib ggml ggml-base ggml-cpu ggml-metal ggml-blas mtmd -- -quiet
 
-echo "Building for macOS..."
-cmake -B build-macos -G Xcode \
-    "${COMMON_CMAKE_ARGS[@]}" \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOS_MIN_OS_VERSION} \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-    -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
-    -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
-    -DLLAMA_OPENSSL=OFF \
-    -S .
-cmake --build build-macos --config Release -- -quiet
-
-echo "Setting up iOS/macOS framework structures..."
+echo "Setting up iOS framework structures..."
 setup_framework_structure "build-ios-sim" ${IOS_MIN_OS_VERSION} "ios"
 setup_framework_structure "build-ios-device" ${IOS_MIN_OS_VERSION} "ios"
-setup_framework_structure "build-macos" ${MACOS_MIN_OS_VERSION} "macos"
 
-echo "Creating iOS/macOS dynamic libraries from static libraries..."
+echo "Creating iOS dynamic libraries from static libraries..."
 combine_static_libraries "build-ios-sim" "Release-iphonesimulator" "ios" "true"
 combine_static_libraries "build-ios-device" "Release-iphoneos" "ios" "false"
-combine_static_libraries "build-macos" "Release" "macos" "false"
 
-echo "Creating iOS/macOS XCFramework..."
+echo "Creating iOS XCFramework..."
 xcrun xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-sim/framework/llama.framework \
-    -debug-symbols $(pwd)/build-ios-sim/dSYMs/llama.dSYM \
     -framework $(pwd)/build-ios-device/framework/llama.framework \
-    -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
-    -framework $(pwd)/build-macos/framework/llama.framework \
-    -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 
 exit 0
