@@ -1188,6 +1188,34 @@ extern "C" {
                                 char * buf,
                              int32_t   length);
 
+    /// Apply the model's Jinja chat template using OpenAI-compatible JSON.
+    ///
+    /// Unlike llama_chat_apply_template_jinja(), this preserves structured
+    /// tool definitions, assistant tool calls, and tool responses. The output
+    /// is a JSON object containing the formatted `prompt` and the opaque parser
+    /// state required by llama_chat_parse_response_jinja_oaicompat().
+    ///
+    /// `messages_json` must be an OpenAI-compatible messages array. An empty or
+    /// null `tools_json` is treated as an empty tools array.
+    LLAMA_API int32_t llama_chat_apply_template_jinja_oaicompat(
+            const struct llama_model * model,
+                          const char * messages_json,
+                          const char * tools_json,
+                                bool   add_ass,
+                                bool   enable_thinking,
+                              char *   buf,
+                             int32_t   length);
+
+    /// Parse generated text using parser state returned by
+    /// llama_chat_apply_template_jinja_oaicompat(). The output is one
+    /// OpenAI-compatible assistant message encoded as JSON.
+    LLAMA_API int32_t llama_chat_parse_response_jinja_oaicompat(
+                          const char * parser_state_json,
+                          const char * response,
+                                bool   is_partial,
+                              char *   buf,
+                             int32_t   length);
+
     // Get list of built-in chat templates
     LLAMA_API int32_t llama_chat_builtin_templates(const char ** output, size_t len);
 

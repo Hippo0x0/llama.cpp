@@ -15,6 +15,7 @@
 #include "ggml-cpp.h"
 #include "ggml-backend.h"
 #include "gguf.h"
+#include "nlohmann/json.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -25,6 +26,7 @@
 #include <cstring>
 #include <ctime>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #if defined(_MSC_VER)
@@ -533,6 +535,91 @@ int32_t llama_chat_apply_template_jinja(
         }
 
         return required;
+    } catch (const std::exception &) {
+        return -1;
+    } catch (...) {
+        return -1;
+    }
+}
+
+static int32_t llama_chat_copy_json_result(const std::string & result, char * buf, int32_t length) {
+    const auto required = static_cast<int32_t>(result.size());
+    if (buf != nullptr && length > 0) {
+        const size_t n_copy = std::min(static_cast<size_t>(length - 1), result.size());
+        std::memcpy(buf, result.data(), n_copy);
+        buf[n_copy] = '\0';
+    }
+    return required;
+}
+
+int32_t llama_chat_apply_template_jinja_oaicompat(
+              const struct llama_model * model,
+                            const char * messages_json,
+                            const char * tools_json,
+                                  bool   add_ass,
+                                  bool   enable_thinking,
+                                char *   buf,
+                               int32_t   length) {
+    if (model == nullptr || messages_json == nullptr) {
+        return -1;
+    }
+
+    try {
+        using json = nlohmann::ordered_json;
+
+        auto tmpls = common_chat_templates_init(model, "");
+        common_chat_templates_inputs inputs;
+        inputs.messages = common_chat_msgs_parse_oaicompat(json::parse(messages_json));
+        if (tools_json != nullptr && tools_json[0] != '\0') {
+            inputs.tools = common_chat_tools_parse_oaicompat(json::parse(tools_json));
+        }
+        inputs.add_generation_prompt = add_ass;
+        inputs.use_jinja = true;
+        inputs.enable_thinking = enable_thinking;
+        inputs.reasoning_format = COMMON_REASONING_FORMAT_AUTO;
+
+        const common_chat_params params = common_chat_templates_apply(tmpls.get(), inputs);
+        json result = {
+            {"prompt", params.prompt},
+            {"format", static_cast<int>(params.format)},
+            {"generation_prompt", params.generation_prompt},
+            {"parser", params.parser},
+            {"supports_thinking", params.supports_thinking},
+            {"additional_stops", params.additional_stops},
+        };
+        return llama_chat_copy_json_result(result.dump(), buf, length);
+    } catch (const std::exception &) {
+        return -1;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int32_t llama_chat_parse_response_jinja_oaicompat(
+                            const char * parser_state_json,
+                            const char * response,
+                                  bool   is_partial,
+                                char *   buf,
+                               int32_t   length) {
+    if (parser_state_json == nullptr || response == nullptr) {
+        return -1;
+    }
+
+    try {
+        using json = nlohmann::ordered_json;
+
+        const json state = json::parse(parser_state_json);
+        common_chat_parser_params params;
+        params.format = static_cast<common_chat_format>(state.at("format").get<int>());
+        params.reasoning_format = COMMON_REASONING_FORMAT_AUTO;
+        params.generation_prompt = state.value("generation_prompt", std::string());
+        const auto parser = state.value("parser", std::string());
+        if (!parser.empty()) {
+            params.parser.load(parser);
+        }
+
+        const common_chat_msg message = common_chat_parse(response, is_partial, params);
+        return llama_chat_copy_json_result(message.to_json_oaicompat(false).dump(), buf, length);
     } catch (const std::exception &) {
         return -1;
     } catch (...) {
